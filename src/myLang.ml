@@ -5,6 +5,6 @@
 35 print "Enter b:"
 40 input b
 50 if a < b then println "a < b"
-60 if a = b then println "a = b"
+60 if a == b then println "a == b"
 70 if a > b then println "a > b"
 80 end

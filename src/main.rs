@@ -1,226 +1,320 @@
-use std::collections::HashMap;
-use std::str;
+use std::collections::{HashMap, HashSet};
+use std::{fs, str};
 use std::io;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::exit;
 
-struct LineItem {
-    line_num:i32,
-    code:String,
+struct Token {
+    token_type:Type,
+    value:String,
+}
+
+enum Type {
+    Number,
+    Literal,
+    UserVariable,
+    Keyword,
+    Comparator,
+    Operator
+}
+
+fn load_keywords(file_name:&str) -> HashSet<String>{
+    let mut file_path = String::from("C:\\Users\\metal\\Desktop\\FakeLanguageInterpreter\\src\\");
+    file_path.push_str(file_name);
+    let file_text = fs::read_to_string(file_path).expect("you fucked up");
+    let mut keywords:HashSet<String> = HashSet::new();
+    for keyword in file_text.split(',') {
+        keywords.insert(keyword.to_string());
+    }
+    keywords
 }
 
 fn main() {
-    println!("Begin the interpretation");
+
+    let keywords:HashSet<String> = load_keywords("KeywordList.txt");
+    let operators:HashSet<&str> = HashSet::from(["*","/","+","-","%"]);
+    let comparators:HashSet<&str> = HashSet::from(["<",">","=="]);
+
+    println!("Start: Load & Parse All");
 
     let file = File::open("C:\\Users\\metal\\Desktop\\FakeLanguageInterpreter\\src\\myLang.ml").expect("you fucked up");
     let mut reader = BufReader::new(file);
-    let mut source_code:Vec<LineItem> = Vec::new();
-    linize_me(&mut reader, &mut source_code);
+    let mut source_code:Vec<Vec<Token>> = Vec::new();
+    parse_all(&mut source_code, &mut reader, &keywords,&operators,&comparators);
+    println!("End: Load & Parse All");
 
-    let mut variables:HashMap<String,i32> = HashMap::new();
-
-    let mut previous_line_number:i32 = -1;
-    'lines: for line in source_code{
-        if previous_line_number == -1 {
-            previous_line_number = line.line_num;
-        } else if previous_line_number >= line.line_num {
-            println!("Line number must be non repeating and in ascending order");
+    println!("Start: Execution");
+    // for line in source_code {
+    //     for token in line {
+    //         print!("{}",token.value);
+    //     }
+    //     print!("\n");
+    // }
+    let mut user_variables:HashMap<String,i32> = HashMap::new();
+    let mut prev_line_num = None;
+    for lines in source_code{
+        if let Type::Number = lines[0].token_type {
+            let curr_line_num = lines[0].value.parse::<i32>().unwrap();
+            if prev_line_num.is_none() {
+                prev_line_num = Some(curr_line_num);
+            } else if curr_line_num >= prev_line_num.unwrap() {
+                    prev_line_num = Some(curr_line_num);
+            } else {
+                println!("Line numbers must be in ascending order: {} -> {}", prev_line_num.unwrap(), curr_line_num);
+                exit(-1);
+            }
+        } else {
+            println!("Lines must start with a number: {} -> {}", prev_line_num.unwrap(), lines[0].value);
             exit(-1);
         }
-        let tokens  = tokenize_me(&line.code);
-        let mut index = 0;
-        'tokens: while index < tokens.len() {
-            match u8_arr_to_str(tokens[index]) {
-                "integer" => {
-                    index+=1;
-                    integer(index,&tokens,&mut variables);
-                    break 'tokens;
-                }
-                "println" => {
-                    if index+1 < tokens.len() {
-                        println!("{}",u8_arr_to_str(tokens[index+1]));
-                    }
-                    break 'tokens;
-                }
-                "print" => {
-                    if index+1 <= tokens.len() {
-                        print!("{} ", u8_arr_to_str(tokens[index + 1]));
-                        io::stdout().flush().expect("That sucks for you bro");  //stdout is buffered need to flush if want to see before stdin
-                    }
-                    break 'tokens;
-                }
-                "input" => {
-                    if index+1 < tokens.len() {
-                        get_input(&tokens[index + 1], &mut variables);
-                        break 'tokens;
-                    } else {
-                        println!("No variable defined for storing user input");
-                        exit(-1);
-                    }
-                }
-                "if" => {
-                    conditional(index+1,&tokens,&variables);
-                    break 'tokens;
-                }
-                "then" => {
-                    println!("\"then\" has no matching \"if\" statement!");
-                    exit(-1);
-                }
-                "end" => {
-                    println!("End interpretation");
-                    exit(0);
-                }
-                _ => {
-                    println!("Unknown token: {}", u8_arr_to_str(tokens[index]));
-                    exit(-1);
-                }
+
+        execute(&lines[1..lines.len()],&mut user_variables, &keywords,&operators,&comparators)
+    }
+
+
+
+
+}
+
+fn execute(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>){
+    if let Type::Keyword = tokens[0].token_type {   //a check like this is probably unnecessary
+        match tokens[0].value.as_str(){
+            "println" => {
+                my_println(tokens.get(1));
             }
+            "print" => {
+                my_print(tokens.get(1));
+            }
+            "integer" => {
+                integer(&tokens[1..tokens.len()] ,user_variables);
+            }
+            "input" => {
+                input(tokens.get(1), user_variables);
+            }
+            "if" => {
+                conditional(&tokens[1..tokens.len()], user_variables,keywords,operators,comparators);
+            }
+            "then" => {
+                execute(&tokens[1..tokens.len()], user_variables,keywords,operators,comparators);
+            }
+            "end" => {
+                println!("End: Execution");
+                exit(0);
+            }
+            _ => {
+                println!("IDK how the hell we got here");
+                exit(-1);
+            }
+        }
+    } else {
+        println!("Keyword missing, found: {}", tokens[0].value);
+        exit(-1);
+    }
+}
+
+fn my_println(token:Option<&Token>){
+    match token {
+        Some(value) => {
+            println!("{}", value.value);
+            io::stdout().flush().expect("Unexpected error in stdout");
+        },
+        None => println!()
+    };
+}
+
+fn my_print(token:Option<&Token>){
+    match token {
+        Some(value) => {
+            print!("{}", value.value);
+            io::stdout().flush().expect("Unexpected error in stdout");
+        },
+        None => {}
+    };
+}
+
+fn integer(tokens:&[Token], user_variables:&mut HashMap<String,i32>){
+    for token in tokens{
+        if let Type::UserVariable = token.token_type{
+            user_variables.insert(token.value.to_string(),0);
+        } else {
+            println!("IDK how the hell we got here");
+            exit(-1);
         }
     }
 }
 
-fn conditional(index:usize,tokens:&Vec<&[u8]>, variables:&HashMap<String,i32>){
-    if tokens.len() - index >= 3 {
-        if variables.contains_key(&u8_arr_to_string(tokens[index]))
-            && variables.contains_key(&u8_arr_to_string(tokens[index+2])){
-            match u8_arr_to_str(tokens[index+1]) {
+fn input(token:Option<&Token>, user_variables:&mut HashMap<String,i32>){
+    match token {
+        Some(value) => {
+            if let Type::UserVariable = value.token_type {
+                if user_variables.contains_key(&value.value) {
+                    let mut user_input: String = String::new();
+                    io::stdin().read_line(&mut user_input).expect("Unexpected error in reading input");
+                    user_variables.insert(value.value.to_string(), match user_input.trim().parse::<i32>() {
+                        Ok(input) => input,
+                        Err(e) => {
+                            println!("Input must be a valid i32; you entered {}", user_input);
+                            exit(-1)
+                        }
+                    });
+                } else {
+                    println!("Undeclared variable {}", value.value);
+                    exit(-1);
+                }
+            } else {
+                println!("This is not a valid variable name");
+                exit(-1);
+            }
+        }
+        None =>{
+            println!("You did not provide a variable to bind a value to.");
+            exit(-1);
+        }
+    }
+}
+
+fn conditional(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>){
+    if tokens.len() >= 3 {
+        if let Type::Comparator = tokens[1].token_type {
+            match tokens[1].value.as_str() {
                 ">" => {
-                    if variables.get(&u8_arr_to_string(tokens[index])) > variables.get(&u8_arr_to_string(tokens[index+2])){
-                        //do the then stuff
-                        then(index+4,tokens);
+                    if let Type::UserVariable = tokens[0].token_type{
+                        if let Type::UserVariable = tokens[2].token_type{
+                            if user_variables.get(tokens[0].value.as_str()).unwrap() > user_variables.get(tokens[2].value.as_str()).unwrap(){
+                                execute(&tokens[3..tokens.len()], user_variables,keywords,operators,comparators)
+                            }
+                        } else {
+                            println!("Tried to use undeclared user variable: {}", tokens[0].value);
+                            exit(-1);
+                        }
+                    } else {
+                        println!("Tried to use undeclared user variable: {}", tokens[0].value);
+                        exit(-1);
                     }
                 }
                 "<" => {
-                    if variables.get(&u8_arr_to_string(tokens[index])) < variables.get(&u8_arr_to_string(tokens[index+2])){
-                        //do the then stuff
-                        then(index+4,tokens);
-                    }
-                }
-                "=" => {
-                    if variables.get(&u8_arr_to_string(tokens[index])) == variables.get(&u8_arr_to_string(tokens[index+2])){
-                        //do the then stuff
-                        then(index+4,tokens);
-                    }
-                }
-                _ => {
-                    println!("Invalid comparison operator: {}",u8_arr_to_str(&tokens[index+1]) );
-                    exit(-1);
-                }
-            }
-        }
-    } else {
-        println!("Missing variables in conditional");
-        exit(-1);
-    }
-}
-
-fn then(start:usize,tokens:&Vec<&[u8]>){
-    match u8_arr_to_str(tokens[start]) {
-        "println" => {
-            println!("{}",&u8_arr_to_str(tokens[start+1]));
-        }
-        "print" => {
-            print!("{}",&u8_arr_to_str(tokens[start+1]));
-            io::stdout().flush().expect("that fucked up");
-        }
-        _ => {
-            println!("Unknown token");
-            exit(-1);
-        }
-    }
-}
-
-fn get_input(var_name:&[u8], variables:&mut HashMap<String,i32>){
-    if variables.contains_key(u8_arr_to_str(var_name)) {
-        let mut user_input: String = String::new();
-        io::stdin().read_line(&mut user_input).expect("you fucked up");
-        let value = match user_input.trim().parse::<i32>() {
-            Ok(input) => input,
-            Err(e) => {
-                println!("Input must be a valid i32; you entered {}", user_input);
-                exit(-1)
-            }
-        };
-        variables.insert(u8_arr_to_string(var_name), value);
-    } else {
-        println!("Attempted to initialized an undeclared variable");
-        exit(-1);
-    }
-}
-
-fn integer(start:usize, tokens:&Vec<&[u8]>, variable:&mut HashMap<String,i32>) {
-    for i in start..tokens.len() {
-        variable.insert(u8_arr_to_string(tokens[i]), 0);
-    }
-}
-
-fn u8_arr_to_str(input:&[u8]) -> &str {
-    str::from_utf8(input).unwrap()
-}
-
-fn u8_arr_to_string(input:&[u8]) -> String{
-    String::from_utf8_lossy(input).to_string()
-}
-
-fn u8_arr_to_i32(input:&[u8]) -> i32 {
-    i32::from_be_bytes(input.try_into().unwrap())
-}
-
-fn get_line_item(line_num:i32, code:String) -> LineItem{
-    LineItem {
-        line_num,
-        code,
-    }
-}
-
-fn linize_me(reader:&mut BufReader<File>, line_map:&mut Vec<LineItem>){
-    for lines in reader.lines() {
-        let line = match lines {
-            Ok(str) => str,
-            Err(e) => exit(-1)
-        };
-        let num_code: (&str, &str) = line.split_once(' ').unwrap().clone();
-        line_map.push(get_line_item(num_code.0.clone().parse::<i32>().expect("Line must start with valid number"), num_code.1.clone().parse().unwrap()));
-    }
-
-}
-
-fn tokenize_me(code:&String) -> Vec<&[u8]> {
-    let mut index = 0;
-    let mut begin =0;
-    let mut tokens:Vec<&[u8]> = Vec::new();
-    let line_bytes = code.as_bytes();
-    while index < line_bytes.len() {
-        match line_bytes[index] as char {
-            '"' => {
-                begin+=1;
-                index+=1;
-                while line_bytes[index] != '"' as u8{
-                    if index == line_bytes.len() - 1 {
-                        println!("non matching quotation!");
+                    if let Type::UserVariable = tokens[0].token_type{
+                        if let Type::UserVariable = tokens[2].token_type{
+                            if user_variables.get(tokens[0].value.as_str()).unwrap() < user_variables.get(tokens[2].value.as_str()).unwrap(){
+                                execute(&tokens[3..tokens.len()], user_variables,keywords,operators,comparators)
+                            }
+                        } else {
+                            println!("Tried to use undeclared user variable: {}", tokens[0].value);
+                            exit(-1);
+                        }
+                    } else {
+                        println!("Tried to use undeclared user variable: {}", tokens[0].value);
                         exit(-1);
                     }
-                    index+=1;
                 }
-                tokens.push(&line_bytes[begin..index]);
-                index+=1;
-                begin = index;
-            }
-            ' ' | ',' | '\t' => {
-                if !line_bytes[begin..index].is_empty(){
-                    tokens.push(&line_bytes[begin..index]);
+                "==" => {
+                    if let Type::UserVariable = tokens[0].token_type{
+                        if let Type::UserVariable = tokens[2].token_type{
+                            if user_variables.get(tokens[0].value.as_str()).unwrap() == user_variables.get(tokens[2].value.as_str()).unwrap(){
+                                execute(&tokens[3..tokens.len()], user_variables,keywords,operators,comparators)
+                            }
+                        } else {
+                            println!("Tried to use undeclared user variable: {}", tokens[0].value);
+                            exit(-1);
+                        }
+                    } else {
+                        println!("Tried to use undeclared user variable: {}", tokens[0].value);
+                        exit(-1);
+                    }
                 }
-                index+=1;
-                begin = index;
-            }
-            _ =>{
-                index+=1;
+                _ => println!("IDK how in the hell we got here")
             }
         }
     }
-    if begin != index{
-        tokens.push(&line_bytes[begin..index]);
+}
+
+fn parse_all(source_code:&mut Vec<Vec<Token>>, reader:&mut BufReader<File>,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>){
+    for line in reader.lines() {
+        match line {
+            Ok(str) => {
+                match parse_line(&str, keywords,operators,comparators){
+                    Some(token) => source_code.push(token),
+                    None => {}
+                }
+            },
+            Err(e) => exit(-1)
+        };
     }
-    tokens
+}
+
+fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>) -> Option<Vec<Token>>{
+    let mut tokens:Vec<Token> = Vec::new();
+    let mut quote:bool = false;
+    let mut start =0;
+    let mut end =0;
+    for i in raw_line.as_bytes()  {
+        end+=1;
+        match *i as char {
+            '"' => {
+                if quote {
+                    tokens.push(get_new_token(Type::Literal, raw_line[start..end-1].to_string()))
+                }
+                quote=!quote;
+                // end+=1;
+                start=end;
+            }
+            ' ' | '\r' | '\t' | '\n' | ',' => {
+                if !quote {
+                    if start != end {
+                        // end+=1;
+                        let raw_token = raw_line[start..end-1].to_string();
+                        tokens.push(get_new_token(determine_type(&raw_token, keywords,operators,comparators), raw_token));
+                        start = end;
+                    } else {
+                        // end += 1;
+                        start = end;
+                    }
+                }
+            }
+            _ => {
+
+            }
+        }
+    }
+    if start!=end {
+        let raw_token = raw_line[start..end].to_string();
+        tokens.push(get_new_token(determine_type(&raw_token, keywords,operators,comparators), raw_token));
+    }
+    if !tokens.is_empty(){
+        Some(tokens)
+    } else {
+        None
+    }
+}
+
+fn get_new_token(token_type:Type, value:String) -> Token{
+    Token {
+        token_type,
+        value
+    }
+}
+
+fn determine_type(raw_token:&String,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>) -> Type{
+    let raw_token_str = raw_token.as_str();
+    if keywords.contains(raw_token_str){
+        Type::Keyword
+    } else if operators.contains(raw_token_str){
+        Type::Operator
+    } else if comparators.contains(raw_token_str){
+        Type::Comparator
+    } else {
+        if is_digit(raw_token) {
+            Type::Number
+        } else {
+            Type::UserVariable
+        }
+    }
+}
+
+fn is_digit(raw_token:&String) -> bool{
+    match raw_token.parse::<i32>() {
+        Ok(t) => true,
+        Err(e)=> false
+    }
 }
