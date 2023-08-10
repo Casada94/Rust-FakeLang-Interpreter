@@ -261,7 +261,7 @@ fn parse_all(source_code:&mut Vec<Vec<Token>>, reader:&mut BufReader<File>,keywo
     for line in reader.lines() {
         match line {
             Ok(str) => {
-                match parse_line(&str, keywords,operators,comparators){
+                match parse_line(&str, keywords,operators,comparators, symbols){
                     Some(token) => source_code.push(token),
                     None => {}
                 }
