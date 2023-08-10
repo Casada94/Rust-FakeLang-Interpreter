@@ -1,5 +1,6 @@
 10 println "Testing if then"
 11 integer a, b
+12 let d = 5
 25 print "Enter a:"
 30 input a
 35 print "Enter b:"

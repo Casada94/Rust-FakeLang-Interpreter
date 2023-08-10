@@ -16,7 +16,8 @@ enum Type {
     UserVariable,
     Keyword,
     Comparator,
-    Operator
+    Operator,
+    Symbol
 }
 
 fn load_keywords(file_name:&str) -> HashSet<String>{
@@ -35,13 +36,14 @@ fn main() {
     let keywords:HashSet<String> = load_keywords("KeywordList.txt");
     let operators:HashSet<&str> = HashSet::from(["*","/","+","-","%"]);
     let comparators:HashSet<&str> = HashSet::from(["<",">","=="]);
+    let symbols:HashSet<&str> = HashSet::from(["="]);
 
     println!("Start: Load & Parse All");
 
     let file = File::open("C:\\Users\\metal\\Desktop\\FakeLanguageInterpreter\\src\\myLang.ml").expect("you fucked up");
     let mut reader = BufReader::new(file);
     let mut source_code:Vec<Vec<Token>> = Vec::new();
-    parse_all(&mut source_code, &mut reader, &keywords,&operators,&comparators);
+    parse_all(&mut source_code, &mut reader, &keywords,&operators,&comparators,&symbols);
     println!("End: Load & Parse All");
 
     println!("Start: Execution");
@@ -69,7 +71,7 @@ fn main() {
             exit(-1);
         }
 
-        execute(&lines[1..lines.len()],&mut user_variables, &keywords,&operators,&comparators)
+        execute(&lines[1..lines.len()],&mut user_variables, &keywords,&operators,&comparators,&symbols)
     }
 
 
@@ -77,38 +79,64 @@ fn main() {
 
 }
 
-fn execute(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>){
-    if let Type::Keyword = tokens[0].token_type {   //a check like this is probably unnecessary
-        match tokens[0].value.as_str(){
-            "println" => {
-                my_println(tokens.get(1));
-            }
-            "print" => {
-                my_print(tokens.get(1));
-            }
-            "integer" => {
-                integer(&tokens[1..tokens.len()] ,user_variables);
-            }
-            "input" => {
-                input(tokens.get(1), user_variables);
-            }
-            "if" => {
-                conditional(&tokens[1..tokens.len()], user_variables,keywords,operators,comparators);
-            }
-            "then" => {
-                execute(&tokens[1..tokens.len()], user_variables,keywords,operators,comparators);
-            }
-            "end" => {
-                println!("End: Execution");
-                exit(0);
-            }
-            _ => {
-                println!("IDK how the hell we got here");
-                exit(-1);
+fn execute(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>, symbols: &HashSet<&str>){
+    match tokens[0].value.as_str(){
+        "println" => {
+            my_println(tokens.get(1));
+        }
+        "print" => {
+            my_print(tokens.get(1));
+        }
+        "integer" => {
+            integer(&tokens[1..tokens.len()] ,user_variables);
+        }
+        "input" => {
+            input(tokens.get(1), user_variables);
+        }
+        "let" => {
+            my_let(&tokens[1..tokens.len()], user_variables);
+        }
+        "if" => {
+            conditional(&tokens[1..tokens.len()], user_variables,keywords,operators,comparators, symbols);
+        }
+        "then" => {
+            execute(&tokens[1..tokens.len()], user_variables, keywords, operators, comparators, symbols);
+        }
+        "end" => {
+            println!("End: Execution");
+            exit(0);
+        }
+        _ => {
+            println!("Missing keyword. Found: {}", tokens[0].value);
+            exit(-1);
+        }
+    }
+
+}
+
+fn my_let(tokens:&[Token], user_variables: &mut HashMap<String, i32>){
+    if tokens.len() != 3{
+        println!("Not enough tokens!");
+        exit(-1);
+    }
+    if let Type::UserVariable = tokens[0].token_type {
+        if let Type::Symbol = tokens[1].token_type {
+            match tokens[1].value.as_str() {
+                "=" => {}
+                _ => {
+                    println!("Missing Assignment operator. Found: {}", tokens[1].value);
+                    exit(-1);
+                }
             }
         }
+        if let Type::Number = tokens[2].token_type {
+            user_variables.insert(tokens[0].value.to_string(), tokens[2].value.parse::<i32>().unwrap());
+        } else {
+            println!("Expected integer, found: {}", tokens[0].value);
+            exit(-1);
+        }
     } else {
-        println!("Keyword missing, found: {}", tokens[0].value);
+        println!("{} is not a valid variable", tokens[0].value);
         exit(-1);
     }
 }
@@ -174,7 +202,7 @@ fn input(token:Option<&Token>, user_variables:&mut HashMap<String,i32>){
     }
 }
 
-fn conditional(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>){
+fn conditional(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>, symbols:&HashSet<&str>){
     if tokens.len() >= 3 {
         if let Type::Comparator = tokens[1].token_type {
             match tokens[1].value.as_str() {
@@ -182,7 +210,7 @@ fn conditional(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywo
                     if let Type::UserVariable = tokens[0].token_type{
                         if let Type::UserVariable = tokens[2].token_type{
                             if user_variables.get(tokens[0].value.as_str()).unwrap() > user_variables.get(tokens[2].value.as_str()).unwrap(){
-                                execute(&tokens[3..tokens.len()], user_variables,keywords,operators,comparators)
+                                execute(&tokens[3..tokens.len()], user_variables, keywords, operators, comparators, symbols)
                             }
                         } else {
                             println!("Tried to use undeclared user variable: {}", tokens[0].value);
@@ -197,7 +225,7 @@ fn conditional(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywo
                     if let Type::UserVariable = tokens[0].token_type{
                         if let Type::UserVariable = tokens[2].token_type{
                             if user_variables.get(tokens[0].value.as_str()).unwrap() < user_variables.get(tokens[2].value.as_str()).unwrap(){
-                                execute(&tokens[3..tokens.len()], user_variables,keywords,operators,comparators)
+                                execute(&tokens[3..tokens.len()], user_variables, keywords, operators, comparators, symbols)
                             }
                         } else {
                             println!("Tried to use undeclared user variable: {}", tokens[0].value);
@@ -212,7 +240,7 @@ fn conditional(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywo
                     if let Type::UserVariable = tokens[0].token_type{
                         if let Type::UserVariable = tokens[2].token_type{
                             if user_variables.get(tokens[0].value.as_str()).unwrap() == user_variables.get(tokens[2].value.as_str()).unwrap(){
-                                execute(&tokens[3..tokens.len()], user_variables,keywords,operators,comparators)
+                                execute(&tokens[3..tokens.len()], user_variables, keywords, operators, comparators, symbols)
                             }
                         } else {
                             println!("Tried to use undeclared user variable: {}", tokens[0].value);
@@ -229,7 +257,7 @@ fn conditional(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywo
     }
 }
 
-fn parse_all(source_code:&mut Vec<Vec<Token>>, reader:&mut BufReader<File>,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>){
+fn parse_all(source_code:&mut Vec<Vec<Token>>, reader:&mut BufReader<File>,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>, symbols:&HashSet<&str>){
     for line in reader.lines() {
         match line {
             Ok(str) => {
@@ -243,7 +271,7 @@ fn parse_all(source_code:&mut Vec<Vec<Token>>, reader:&mut BufReader<File>,keywo
     }
 }
 
-fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>) -> Option<Vec<Token>>{
+fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>, symbols:&HashSet<&str>) -> Option<Vec<Token>>{
     let mut tokens:Vec<Token> = Vec::new();
     let mut quote:bool = false;
     let mut start =0;
@@ -256,18 +284,15 @@ fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&st
                     tokens.push(get_new_token(Type::Literal, raw_line[start..end-1].to_string()))
                 }
                 quote=!quote;
-                // end+=1;
                 start=end;
             }
             ' ' | '\r' | '\t' | '\n' | ',' => {
                 if !quote {
                     if start != end {
-                        // end+=1;
                         let raw_token = raw_line[start..end-1].to_string();
-                        tokens.push(get_new_token(determine_type(&raw_token, keywords,operators,comparators), raw_token));
+                        tokens.push(get_new_token(determine_type(&raw_token, keywords,operators,comparators,symbols), raw_token));
                         start = end;
                     } else {
-                        // end += 1;
                         start = end;
                     }
                 }
@@ -279,7 +304,7 @@ fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&st
     }
     if start!=end {
         let raw_token = raw_line[start..end].to_string();
-        tokens.push(get_new_token(determine_type(&raw_token, keywords,operators,comparators), raw_token));
+        tokens.push(get_new_token(determine_type(&raw_token, keywords,operators,comparators,symbols), raw_token));
     }
     if !tokens.is_empty(){
         Some(tokens)
@@ -295,7 +320,7 @@ fn get_new_token(token_type:Type, value:String) -> Token{
     }
 }
 
-fn determine_type(raw_token:&String,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>) -> Type{
+fn determine_type(raw_token:&String,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>, symbols:&HashSet<&str>) -> Type{
     let raw_token_str = raw_token.as_str();
     if keywords.contains(raw_token_str){
         Type::Keyword
@@ -303,6 +328,8 @@ fn determine_type(raw_token:&String,keywords:&HashSet<String>, operators:&HashSe
         Type::Operator
     } else if comparators.contains(raw_token_str){
         Type::Comparator
+    } else if symbols.contains(raw_token_str) {
+        Type::Symbol
     } else {
         if is_digit(raw_token) {
             Type::Number

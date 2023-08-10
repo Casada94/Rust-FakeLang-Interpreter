@@ -1,1 +1,1 @@
-println,print,integer,if,then,end,input
+println,print,integer,if,then,end,input,let
