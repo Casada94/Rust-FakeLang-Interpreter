@@ -261,10 +261,10 @@ fn parse_all(source_code:&mut Vec<Vec<Token>>, reader:&mut BufReader<File>,keywo
     for line in reader.lines() {
         match line {
             Ok(str) => {
-                match parse_line(&str, keywords,operators,comparators, symbols){
-                    Some(token) => source_code.push(token),
-                    None => {}
-                }
+                match parse_line(&str, keywords,operators,comparators,symbols){
+                        Some(token) => source_code.push(token),
+                        None => {}
+                    }
             },
             Err(e) => exit(-1)
         };
@@ -274,9 +274,10 @@ fn parse_all(source_code:&mut Vec<Vec<Token>>, reader:&mut BufReader<File>,keywo
 fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>, symbols:&HashSet<&str>) -> Option<Vec<Token>>{
     let mut tokens:Vec<Token> = Vec::new();
     let mut quote:bool = false;
+    let mut slash:bool = false;
     let mut start =0;
     let mut end =0;
-    for i in raw_line.as_bytes()  {
+    for i in raw_line.as_bytes() {
         end+=1;
         match *i as char {
             '"' => {
@@ -285,6 +286,14 @@ fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&st
                 }
                 quote=!quote;
                 start=end;
+            }
+            '/' => {
+                if !quote {
+                    if slash {
+                        break;
+                    }
+                    slash = !slash;
+                }
             }
             ' ' | '\r' | '\t' | '\n' | ',' => {
                 if !quote {
@@ -302,7 +311,7 @@ fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&st
             }
         }
     }
-    if start!=end {
+    if start!=end && !slash {
         let raw_token = raw_line[start..end].to_string();
         tokens.push(get_new_token(determine_type(&raw_token, keywords,operators,comparators,symbols), raw_token));
     }
