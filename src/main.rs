@@ -34,9 +34,9 @@ fn load_keywords(file_name:&str) -> HashSet<String>{
 fn main() {
 
     let keywords:HashSet<String> = load_keywords("KeywordList.txt");
-    let operators:HashSet<&str> = HashSet::from(["*","/","+","-","%"]);
+    let operators:HashSet<&str> = HashSet::from(["*","/","+","-","%","="]);
     let comparators:HashSet<&str> = HashSet::from(["<",">","=="]);
-    let symbols:HashSet<&str> = HashSet::from(["="]);
+    let symbols:HashSet<&str> = HashSet::from(["(",")"]);
 
     println!("Start: Load & Parse All");
 
@@ -85,7 +85,7 @@ fn execute(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:
             my_println(tokens.get(1));
         }
         "print" => {
-            my_print(tokens.get(1));
+            my_print(tokens.get(1), user_variables);
         }
         "integer" => {
             integer(&tokens[1..tokens.len()] ,user_variables);
@@ -94,7 +94,7 @@ fn execute(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:
             input(tokens.get(1), user_variables);
         }
         "let" => {
-            my_let(&tokens[1..tokens.len()], user_variables);
+            my_let(&tokens[1..tokens.len()], user_variables, symbols);
         }
         "if" => {
             conditional(&tokens[1..tokens.len()], user_variables,keywords,operators,comparators, symbols);
@@ -114,27 +114,80 @@ fn execute(tokens:&[Token], user_variables: &mut HashMap<String, i32>, keywords:
 
 }
 
-fn my_let(tokens:&[Token], user_variables: &mut HashMap<String, i32>){
-    if tokens.len() != 3{
+// fn expression(tokens:&[Token], user_variables: &mut HashMap<String, i32>) -> i32{
+//     let mut interExpression = Vec::new();
+//
+// }
+
+fn calculate(tokens:&[Token], user_variables: &mut HashMap<String, i32>) -> i32 {
+    let mut val1 = 0;
+    let mut val2 =0;
+    if tokens.len() >= 3 {
+        val1 = extract_val(&tokens[0], user_variables);
+        val2 = extract_val(&tokens[2], user_variables)
+    }
+    match tokens[1].value.as_str() {
+        "*" => {
+            val1 * val2
+        }
+        "+" => {
+            val1 + val2
+        }
+        "/" => {
+            val1 / val2
+        }
+        "-" => {
+            val1 - val2
+        }
+        _ => {
+            println!("Unknown operator: {}", tokens[1].value);
+            exit(-1);
+        }
+    }
+
+}
+
+fn extract_val(token:&Token, user_variables:&HashMap<String,i32>) -> i32{
+    match token.token_type {
+        Type::Number => {
+            token.value.parse::<i32>().unwrap()
+        }
+        Type::UserVariable =>{
+            match user_variables.get(&token.value.to_string()) {
+                Some(value) => *value,
+                None => {
+                    println!("Tried to use undeclared variable.");
+                    exit(-1);
+                }
+            }
+        }
+        _ => {
+            println!("Cannot extract i32 value of {}", token.value);
+            exit(-1);
+        }
+    }
+}
+
+fn my_let(tokens:&[Token], user_variables: &mut HashMap<String, i32>, symbols:&HashSet<&str>){
+    if tokens.len() < 3{
         println!("Not enough tokens!");
         exit(-1);
     }
     if let Type::UserVariable = tokens[0].token_type {
-        if let Type::Symbol = tokens[1].token_type {
+        if let Type::Operator = tokens[1].token_type {
             match tokens[1].value.as_str() {
-                "=" => {}
+                "=" => {
+                    let x:i32 = calculate(&tokens[2..tokens.len()], user_variables);
+                    user_variables.insert(tokens[0].value.to_string(), x);
+                }
                 _ => {
                     println!("Missing Assignment operator. Found: {}", tokens[1].value);
                     exit(-1);
                 }
             }
         }
-        if let Type::Number = tokens[2].token_type {
-            user_variables.insert(tokens[0].value.to_string(), tokens[2].value.parse::<i32>().unwrap());
-        } else {
-            println!("Expected integer, found: {}", tokens[0].value);
-            exit(-1);
-        }
+
+
     } else {
         println!("{} is not a valid variable", tokens[0].value);
         exit(-1);
@@ -151,10 +204,23 @@ fn my_println(token:Option<&Token>){
     };
 }
 
-fn my_print(token:Option<&Token>){
+fn my_print(token:Option<&Token>, user_variables: &mut HashMap<String, i32>){
+    let mut to_print:String = String::new();
     match token {
         Some(value) => {
-            print!("{}", value.value);
+            match value.token_type {
+                Type::UserVariable =>{
+                    to_print = user_variables.get(&value.value).ok_or("unknown variable").unwrap().to_string();
+                }
+                Type::Number => {
+                    to_print = value.value.to_string();
+                }
+                _ => {
+                    println!("Unable to print the unknown: {}", value.value);
+                    exit(-1);
+                }
+            }
+            print!("{}", to_print);
             io::stdout().flush().expect("Unexpected error in stdout");
         },
         None => {}
