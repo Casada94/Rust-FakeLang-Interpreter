@@ -95,9 +95,9 @@ fn parse_line(raw_line:&String,keywords:&HashSet<String>, operators:&HashSet<&st
     let mut slash:bool = false;
     let mut start =0;
     let mut end =0;
-    for i in raw_line.as_bytes() {
+    for i in raw_line.chars() {
         end+=1;
-        match *i as char {
+        match i {
             '"' => {
                 if quote {
                     tokens.push(get_new_token(Type::Literal, raw_line[start..end-1].to_string()))
@@ -150,14 +150,14 @@ fn get_new_token(token_type:Type, value:String) -> Token{
 }
 
 fn determine_type(raw_token:&String,keywords:&HashSet<String>, operators:&HashSet<&str>, comparators:&HashSet<&str>, symbols:&HashSet<&str>) -> Type{
-    let raw_token_str = raw_token.as_str();
-    if keywords.contains(raw_token_str){
+    let raw_token_str = raw_token.to_ascii_lowercase();
+    if keywords.contains(raw_token_str.as_str()){
         Type::Keyword
-    } else if operators.contains(raw_token_str){
+    } else if operators.contains(raw_token_str.as_str()){
         Type::Operator
-    } else if comparators.contains(raw_token_str){
+    } else if comparators.contains(raw_token_str.as_str()){
         Type::Comparator
-    } else if symbols.contains(raw_token_str) {
+    } else if symbols.contains(raw_token_str.as_str()) {
         Type::Symbol
     } else {
         if is_digit(raw_token) {
